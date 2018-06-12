@@ -247,6 +247,9 @@ class AppKotH extends Component {
         markers.push(newMarker);
         //newMarker.map = this.state.map;
         //console.log(newMarker.map);
+        this.props.google.maps.event.addListener(newMarker, 'click', function(){
+          console.log("here");
+        });
       }
     });
     this.state.userMarkers = markers;
@@ -333,7 +336,6 @@ class AppKotH extends Component {
     });
     return res;
   }
-
 
 
 
