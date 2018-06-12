@@ -29,6 +29,7 @@ class AppKotH extends Component {
     this.state = {
       Usuarios : [],
       userMarkers : [],
+      placeMarkers : [],
       show : true,
       currentUser : {
         nickname : "UserName",
@@ -38,6 +39,7 @@ class AppKotH extends Component {
       currentLat : 0,
       currentLng : 0,
       currentRadius : {},
+      locatorRadius : {},
       map : {},
       DB : firebase.database().ref(),
       GF : {},
@@ -60,6 +62,8 @@ class AppKotH extends Component {
     this.loadUsers = this.loadUsers.bind(this);
     this.loadUserMarkers = this.loadUserMarkers.bind(this);
     this.unloadUserMarkers = this.unloadUserMarkers.bind(this);
+    this.loadPlaceMarkers = this.loadPlaceMarkers.bind(this);
+    this.unloadPlaceMarkers = this.unloadPlaceMarkers.bind(this);
     this.reloadUsers = this.reloadUsers.bind(this);
     this.firebaseListToArray = this.firebaseListToArray.bind(this);
     this.registerListener_DBUpdateUsers = this.registerListener_DBUpdateUsers.bind(this);
@@ -76,8 +80,13 @@ class AppKotH extends Component {
     this.state.GF = new GeoFire(this.state.DB.child('Usuarios'));
     this.state.currentRadius = new this.props.google.maps.Circle({
       map: this.state.map,
+      radius: 1000,
+      fillColor: '#0000FF'
+    });
+    this.state.locatorRadius = new this.props.google.maps.Circle({
+      map: this.state.map,
       radius: 2000,
-      fillColor: '#0000AA'
+      fillColor: '#00FF00'
     });
     this.setState(this.state);
     navigator.geolocation.getCurrentPosition(pos => {
@@ -134,7 +143,6 @@ class AppKotH extends Component {
       firebase.auth().signInWithPopup(googleAuthProvider).then((data) => {
         //var userMarker = this.createMarker(data.user.nickname, data.user.photoURL, position.coords.latitude, position.coords.longitude);
         //userMarker.map = this.state.map;
-        console.log(data);
         this.state.currentUser = { nickname : data.user.displayName, photoURL : data.user.photoURL, uid : data.user.uid };
         this.state.show = false;
         this.setState(this.state);
@@ -145,6 +153,7 @@ class AppKotH extends Component {
           }
         });
         this.reloadUsers();
+        this.reloadPlaces();
         this.registerListener_ClientUpdatePosition(data.user.uid);
         this.registerListener_DBUpdateUsers();
         console.log("end");
@@ -232,7 +241,7 @@ class AppKotH extends Component {
   loadUserMarkers(snapshot){
     var markers = [];
     snapshot.forEach(userM =>{
-      if(GeoFire.distance([this.state.currentLat, this.state.currentLng], userM.val().Location.l) < 2)
+      if(GeoFire.distance([this.state.currentLat, this.state.currentLng], userM.val().Location.l) < 1)
       {
         var newMarker = this.createMarker(userM.val().nickname, userM.val().photoURL, userM.val().Location.l[0], userM.val().Location.l[1]);
         markers.push(newMarker);
@@ -244,7 +253,7 @@ class AppKotH extends Component {
     this.state.currentRadius = new this.props.google.maps.Circle({
       map: this.state.map,
       center : { lat: this.state.currentLat, lng: this.state.currentLng},
-      radius: 2000,
+      radius: 1000,
       fillColor: '#0000FF',
       strokeOpacity: 0.7,
       strokeWeight: 2,
@@ -253,7 +262,6 @@ class AppKotH extends Component {
     this.setState(this.state);
     console.log("loaded User Markers");
   }
-
   unloadUserMarkers(){
     this.state.userMarkers.forEach(marker =>{
       //marker.map = null;
@@ -267,12 +275,55 @@ class AppKotH extends Component {
     console.log("unloaded User Markers");
   }
 
+  loadPlaceMarkers(snapshot){
+    var markers = [];
+    snapshot.forEach(placeM =>{
+      if(GeoFire.distance([this.state.currentLat, this.state.currentLng], [placeM.val().Location.lat, placeM.val().Location.lng]) < 2)
+      {
+        var newMarker = this.createMarker(placeM.val().nombre, "https://d30y9cdsu7xlg0.cloudfront.net/png/9711-200.png", placeM.val().Location.lat, placeM.val().Location.lng);
+        markers.push(newMarker);
+        //newMarker.map = this.state.map;
+        //console.log(newMarker.map);
+      }
+    });
+    this.state.placeMarkers = markers;
+    this.state.locatorRadius = new this.props.google.maps.Circle({
+      map: this.state.map,
+      center : { lat: this.state.currentLat, lng: this.state.currentLng},
+      radius: 2000,
+      fillColor: '#00FF00',
+      strokeOpacity: 0.5,
+      strokeWeight: 3,
+      fillColor: '#0000FF'
+    });
+    this.setState(this.state);
+    console.log("loaded Palces Markers");
+  }
+  unloadPlaceMarkers(){
+    this.state.placeMarkers.forEach(marker =>{
+      //marker.map = null;
+      marker.setMap(null);
+      marker = null;
+    });
+    this.state.placeMarkers = [];
+    this.state.locatorRadius.setMap(null);
+    this.state.locatorRadius = {};
+    this.setState(this.state);
+    console.log("unloaded Places Markers");
+  }
+
   reloadUsers(){
     this.state.DB.child('Usuarios').once('value', snapshot =>{
       this.loadUsers(snapshot);
       this.unloadUserMarkers();
       this.loadUserMarkers(snapshot);
     });
+  }
+  reloadPlaces(){
+    this.state.DB.child('Markers').once('value', snapshot =>{
+      this.unloadPlaceMarkers();
+      this.loadPlaceMarkers(snapshot);
+    })
   }
 
   firebaseListToArray(firebaseList){
@@ -300,6 +351,7 @@ class AppKotH extends Component {
         this.setState(this.state);
       }
       this.reloadUsers();
+      this.reloadPlaces();
     });
     this.state.DB.child('Usuarios').on('child_changed', snapshot => {
       console.log("child_changed");
@@ -321,6 +373,7 @@ class AppKotH extends Component {
       console.log(this.state.userMarkers);
       */
       this.reloadUsers();
+      this.reloadPlaces();
       console.log(this.state);
       //console.log(this.state.GQ.center());
       //console.log(this.state.GQ.radius());
