@@ -35,9 +35,18 @@ class AppKotH extends Component {
         photoURL : "",
         uid : ""
       },
+      currentLat : 0,
+      currentLng : 0,
+      currentRadius : {},
       map : {},
-      DB : firebase.database().ref()
+      DB : firebase.database().ref(),
+      GF : {},
+      GQ : {},
+      event_enter : {},
+      event_move : {},
+      event_exit : {}
     };
+    
     this.handleClose = this.handleClose.bind(this);
     this.handleShow = this.handleShow.bind(this);
     this.signInGoogle = this.signInGoogle.bind(this);
@@ -64,7 +73,20 @@ class AppKotH extends Component {
 
   componentWillMount()
   {
-
+    this.state.GF = new GeoFire(this.state.DB.child('Usuarios'));
+    this.state.currentRadius = new this.props.google.maps.Circle({
+      map: this.state.map,
+      radius: 2000,
+      fillColor: '#0000AA'
+    });
+    this.setState(this.state);
+    navigator.geolocation.getCurrentPosition(pos => {
+      this.state.GQ = this.state.GF.query({
+        center: [pos.coords.latitude, pos.coords.longitude],
+        radius: 2000
+      });
+    });
+    console.log("componenrWillMount");
   }
 
   render() {
@@ -110,8 +132,9 @@ class AppKotH extends Component {
     navigator.geolocation.getCurrentPosition(position => {
       var googleAuthProvider = new firebase.auth.GoogleAuthProvider;
       firebase.auth().signInWithPopup(googleAuthProvider).then((data) => {
-        var userMarker = this.createMarker(data.user.nickname, data.user.photoURL, position.coords.latitude, position.coords.longitude);
-        userMarker.map = this.state.map;
+        //var userMarker = this.createMarker(data.user.nickname, data.user.photoURL, position.coords.latitude, position.coords.longitude);
+        //userMarker.map = this.state.map;
+        console.log(data);
         this.state.currentUser = { nickname : data.user.displayName, photoURL : data.user.photoURL, uid : data.user.uid };
         this.state.show = false;
         this.setState(this.state);
@@ -124,6 +147,7 @@ class AppKotH extends Component {
         this.reloadUsers();
         this.registerListener_ClientUpdatePosition(data.user.uid);
         this.registerListener_DBUpdateUsers();
+        console.log("end");
       })
       .catch(function(err) {
         console.log("Error");
@@ -166,9 +190,9 @@ class AppKotH extends Component {
   createMarker(nickname, photoURL, latitude, longitude){
     var icon = {
       url: photoURL, // url
-      scaledSize: new this.props.google.maps.Size(50, 50), // scaled size
+      scaledSize: new this.props.google.maps.Size(40, 40), // scaled size
       origin: new this.props.google.maps.Point(0,0), // origin
-      anchor: new this.props.google.maps.Point(0, 0) // anchor
+      anchor: new this.props.google.maps.Point(20, 20) // anchor
     };
     var pos = new this.props.google.maps.LatLng(latitude, longitude)
     return new this.props.google.maps.Marker({
@@ -177,7 +201,6 @@ class AppKotH extends Component {
         position: pos,
         title: nickname
     });
-    console.log("Marker created at " + latitude + " and " + longitude);
   }
   registerNewUser(usuario, lat, lng){
     this.state.DB.child('Usuarios').push(usuario);
@@ -188,6 +211,11 @@ class AppKotH extends Component {
   updateUserLocation(key, lat, lng){
     var geoFire = new GeoFire(this.state.DB.child('Usuarios').child(key));
     geoFire.set("Location", [lat, lng]);
+    /*
+    this.state.GQ.updateCriteria({
+      center: [lat, lng]
+    });
+    */
   }
   loadUsers(snapshot){
     var usuarios = [];
@@ -199,21 +227,30 @@ class AppKotH extends Component {
       });
     });
     this.state.Usuarios = usuarios;
-    this.setState(this.state);
     console.log("loaded Users");
   }
   loadUserMarkers(snapshot){
     var markers = [];
     snapshot.forEach(userM =>{
-      console.log(userM.val());
-      var newMarker = this.createMarker(userM.val().nickname, userM.val().photoURL, userM.val().Location.l[0], userM.val().Location.l[1]);
-      markers.push(newMarker);
-      //newMarker.map = this.state.map;
-      //console.log(newMarker.map);
+      if(GeoFire.distance([this.state.currentLat, this.state.currentLng], userM.val().Location.l) < 2)
+      {
+        var newMarker = this.createMarker(userM.val().nickname, userM.val().photoURL, userM.val().Location.l[0], userM.val().Location.l[1]);
+        markers.push(newMarker);
+        //newMarker.map = this.state.map;
+        //console.log(newMarker.map);
+      }
     });
     this.state.userMarkers = markers;
+    this.state.currentRadius = new this.props.google.maps.Circle({
+      map: this.state.map,
+      center : { lat: this.state.currentLat, lng: this.state.currentLng},
+      radius: 2000,
+      fillColor: '#0000FF',
+      strokeOpacity: 0.7,
+      strokeWeight: 2,
+      fillColor: '#00FF00'
+    });
     this.setState(this.state);
-    console.log(this.state);
     console.log("loaded User Markers");
   }
 
@@ -224,8 +261,9 @@ class AppKotH extends Component {
       marker = null;
     });
     this.state.userMarkers = [];
+    this.state.currentRadius.setMap(null);
+    this.state.currentRadius = {};
     this.setState(this.state);
-    console.log(this.state);
     console.log("unloaded User Markers");
   }
 
@@ -247,10 +285,11 @@ class AppKotH extends Component {
 
 
 
+
+
   registerListener_DBUpdateUsers(){
     this.state.DB.child('Usuarios').on('child_added', snapshot => {
       console.log("child_added");
-      console.log(snapshot.val());
       if(!this.doesUserExist_Client(this.state.Usuarios, snapshot.val().uid))
       {
         this.state.Usuarios.push({
@@ -281,21 +320,34 @@ class AppKotH extends Component {
       console.log(snapshot.val());
       console.log(this.state.userMarkers);
       */
-     this.reloadUsers();
-      //this.loadUsers(snapshot);
-      //this.unloadUserMarkers();
-      //this.loadUserMarkers(snapshot);
+      this.reloadUsers();
+      console.log(this.state);
+      //console.log(this.state.GQ.center());
+      //console.log(this.state.GQ.radius());
     });
+
+    this.state.event_enter = this.state.GQ.on("key_entered", function(key, location, distance) {
+      console.log(key + " entered query at " + location + " (" + distance + " km from center)");
+    });
+    
+    this.state.event_exit = this.state.GQ.on("key_exited", function(key, location, distance) {
+      console.log(key + " exited query to " + location + " (" + distance + " km from center)");
+    });
+    
+    this.state.event_move = this.state.GQ.on("key_moved", function(key, location, distance) {
+      console.log(key + " moved within query to " + location + " (" + distance + " km from center)");
+    });
+    console.log("doesent break");
+
+
     this.state.DB.child('Usuarios').on('child_removed', snapshot => {
       console.log("child_removed");
-      console.log(snapshot.val());
       //this.loadUsers(snapshot);
       //this.unloadUserMarkers();
       //this.loadUserMarkers(snapshot);
     });
     this.state.DB.child('Usuarios').on('child_moved', snapshot => {
       console.log("child_moved");
-      console.log(snapshot.val());
       //this.loadUsers(snapshot);
       //this.unloadUserMarkers();
       //this.loadUserMarkers(snapshot);
@@ -305,8 +357,9 @@ class AppKotH extends Component {
     navigator.geolocation.watchPosition(pos => {
       this.getStudentByUid_DB(uid).then(user => {
         console.log('Position Updated');
+        this.state.currentLat = pos.coords.latitude;
+        this.state.currentLng = pos.coords.longitude;
         this.updateUserLocation(Object.keys(user.val())[0], pos.coords.latitude, pos.coords.longitude);
-        console.log(this.state);
       });
     });
   }
